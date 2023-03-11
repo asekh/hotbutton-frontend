@@ -1,82 +1,101 @@
 import logo from './HotButton.png';
 import './App.css';
 import * as React from 'react';
-import Box from '@mui/material/Box';
-import TextField from '@mui/material/TextField';
-import Input from '@mui/material/Input';
-import InputLabel from '@mui/material/InputLabel';
-import MenuItem from '@mui/material/MenuItem';
-import FormControl from '@mui/material/FormControl';
-import Select from '@mui/material/Select';
 import axios from 'axios';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import Details from './DetailsPage.js'
+import WordCloud from './WordCloud';
+import { Radar } from 'react-chartjs-2';
 
-const API_KEY_ERROR = 'No API Key provided.';
-const SEARCH_TERM_ERROR = 'No search term provided.';
-const storedTopics = ['abortion', 'ukraine']// ['abortion', 'hindutva', 'ukraine'];
-const topicItems = storedTopics.map((topic, i) => (<MenuItem value={topic} key={i}>{topic}</MenuItem>));
+import {
+  Chart as ChartJS,
+  RadialLinearScale,
+  PointElement,
+  LineElement,
+  Filler,
+  Tooltip,
+  Legend,
+  ArcElement,
+} from 'chart.js';
+
+ChartJS.register(RadialLinearScale, ArcElement, PointElement,LineElement,Filler,Tooltip,Legend);
+
+const storedTopics = ['abortion', 'ukraine'];
+const topicItems = storedTopics.map((topic, i) => (<option value={topic} key={i}>{topic}</option>));
 const libraries = {
   'Vader': 'vader',
-  'Vader minus stopwords': 'vader_stopwords',
+  'Vader with stopwords': 'vader_stopwords',
   'TextBlob': 'textblob',
-  'TextBlob minus stopwords': 'textblob_stopwords'
+  'TextBlob with stopwords': 'textblob_stopwords'
 }
-const libraryItems = Object.keys(libraries).map((library, i) => (<MenuItem value={libraries[library]} key={i}>{library}</MenuItem>))
-
+const libraryItems = Object.keys(libraries).map((library, i) => (<option value={libraries[library]} key={i}>{library}</option>))
 
 class App extends React.Component {
   constructor(props) {
     super(props);    
     this.state = {
-      searchTerm: '',
-      twitterAPIKey: '',
-      presetSelection: '',
-      presetLibrarySelection: '',
-      errorText: [],
+      presetSelection: 'abortion',
+      presetLibrarySelection: 'vader',
       response: undefined,
     };
-    this.validateInput = this.validateInput.bind(this);
     this.submitBackendRequest = this.submitBackendRequest.bind(this);
   }
 
-  validateInput() {
-    console.log("Validate input called");
-    const errors = [];
-    if(this.state.presetSelection.length && this.state.presetLibrarySelection.length) {
-      return true;
-    }
-    if(!this.state.presetSelection.length) {
-      errors.push(SEARCH_TERM_ERROR);
-    }
-    if(!this.state.presetLibrarySelection.length) {
-      errors.push(SEARCH_TERM_ERROR);
-    }
-    if(!this.state.twitterAPIKey.length) {
-      errors.push(API_KEY_ERROR);
-    }
-    if(!this.state.searchTerm.length) {
-      errors.push(SEARCH_TERM_ERROR);
-    }
-    this.setState({errorText: errors});
-    return errors.length;
-  }
-
   async submitBackendRequest() {
-    if(!this.validateInput()) return;
     await axios.get("http://localhost:9000/data/" + this.state.presetSelection + '/' + this.state.presetLibrarySelection).then(res => {
-      console.log(JSON.stringify(res.data));
       this.setState({response: JSON.stringify(res.data)})}).catch((e) => console.log(e));
   }
 
   render() {
-    console.log(this.state.errorText);
       if(this.state.response) {
-        console.log(this.state.response);
+        const data = JSON.parse(this.state.response);
+      console.log(data);
+      const polarities = [data.polarity[0].length, data.polarity[1].length, data.polarity[2].length]
+      const allPolarities = data.polarity[0].concat(data.polarity[1]).concat(data.polarity[2]).map(item => Math.abs(item));
+      const totalPolarities = polarities.reduce((total, current) => total + current, 0);
+      const polarityPercentages = polarities.map(elem => (elem * 100 / totalPolarities));
+      console.log(polarities)
+      const polarDataPercentages = {
+        labels: ['Positive', 'Neutral', 'Negative'],
+        datasets: [
+          {
+            label: '% of Tweets',
+            data: polarityPercentages,
+            backgroundColor: [
+              'rgba(255, 99, 132, 0.5)',
+              'rgba(54, 162, 235, 0.5)',
+              'rgba(255, 206, 86, 0.5)',
+            ],
+            borderWidth: 1,
+          },
+        ],
+      };
+      const polarData = {
+        labels: Array.from({ length: polarities[0] }, () => '')
+        .concat(Array.from({ length: polarities[1] }, () => ''))
+        .concat(Array.from({ length: polarities[2] }, () => '')),
+        datasets: [
+          {
+            label: 'Intensity of Tweets',
+            data: allPolarities,
+            backgroundColor: 
+            Array.from({ length: polarities[0] }, () => 'rgba(0, 255, 0, 0.9)')
+            .concat(Array.from({ length: polarities[1] }, () => 'rgba(0, 0, 255, 0.9)'))
+            .concat(Array.from({ length: polarities[2] }, () => 'rgba(255, 0, 0, 0.9)')),
+            borderWidth: 1,
+          },
+        ],
+      };
         return (
           <div>
-            <Details responseData={this.state.response}></Details>
-            <button onClick={() => this.setState({response: undefined})}>Clear</button>
+          <div>
+            <div>
+            <WordCloud words={data.wordCounter} />
+            <div style={{maxHeight: '30rem', alignItems: 'center', display: 'flex'}}>
+              <Radar data={polarDataPercentages} />
+              <Radar data={polarData} />
+            </div>
+            </div>
+          </div>            
+          <button onClick={() => this.setState({response: undefined})}>Clear</button>
           </div>
         )
       } else {
@@ -84,62 +103,20 @@ class App extends React.Component {
         <div className="App">
           <header className="App-header">
             <p style={{'display': 'inline', 'fontWeight': 220, 'fontSize': '5rem'}}>Welcome to <b>Hot</b>Button.</p>
-
             <div onClick={(e) => this.submitBackendRequest()}>
               <img src={logo} className="App-logo" alt="logo"/>
             </div>
-
             <p style={{'display': 'inline', 'fontWeight': 300, 'fontSize': '2rem'}}>What are you curious about today?</p>
-
             <div style={{color: 'white', display: 'contents'}}>
             <p style={{'display': 'inline', 'fontWeight': 300, 'fontSize': '1rem'}}>Select from one of these pre-loaded options to try out:</p>
-            <div style={{'display': 'inline-block'}}>
-              <Select
-                value={this.state.presetSelection}
-                inputProps={{style: {width: '15rem', minWidth: '15rem'}}}
-                autoWidth
-                label="Select a pre-loaded term"
-                style={{backgroundColor: 'white', minWidth: '15rem'}}
-                sx={{backgroundColor: 'white',  minWidth: '15rem' }}
-                onChange={(e)=> this.setState({presetSelection: e.target.value})}>
+            <div>
+              <select value={this.state.presetSelection.length ? this.state.presetSelection : ""} onChange={(e) => this.setState({presetSelection: e.target.value})}>
                 {topicItems}
-              </Select>
-              <div style={{'padding': '1rem'}}></div>
-              <Select
-                value={this.state.presetLibrarySelection}
-                inputProps={{style: {width: '15rem', minWidth: '15rem', color: 'white'}}}
-                autoWidth
-                label="Select a pre-loaded library"
-                style={{backgroundColor: 'white', minWidth: '15rem'}}
-                sx={{backgroundColor: 'white',  minWidth: '15rem' }}
-                onChange={(e)=> this.setState({presetLibrarySelection: e.target.value})}>
+              </select>
+              <select value={this.state.presetLibrarySelection.length ? this.state.presetLibrarySelection : ""} onChange={(e) => this.setState({presetLibrarySelection: e.target.value})}>
                 {libraryItems}
-              </Select>
+              </select>
             </div>
-
-              <p style={{'display': 'inline', 'fontWeight': 0, 'fontSize': '1rem'}}>Or, if you have a Twitter API key,</p>
-              <div style={{margin: '1rem'}}>
-                <TextField 
-                  value={this.state.searchTerm}
-                  onChange={(e) => this.setState({searchTerm: e.target.value})}
-                  error={(this.state.errorText.includes(SEARCH_TERM_ERROR))}
-                  variant="outlined"
-                  label="Enter search term"
-                  style={{color: 'white'}}
-                  inputProps={{style: {color: 'white'}}}>
-                </TextField>
-              </div>
-              <div style={{margin: '1rem'}}>
-                <TextField 
-                  value={this.state.twitterAPIKey} 
-                  onChange={(e) => this.setState({twitterAPIKey: e.target.value})}
-                  error={(this.state.errorText.includes(API_KEY_ERROR))}
-                  variant="outlined"
-                  label="Enter Twitter API Key"
-                  style={{color: 'white'}}
-                  inputProps={{style: {color: 'white'}}}>
-                </TextField>
-              </div>
             </div>
           </header>
         </div>)
